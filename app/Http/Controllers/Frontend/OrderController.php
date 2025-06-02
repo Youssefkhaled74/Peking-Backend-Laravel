@@ -183,33 +183,27 @@ class OrderController extends Controller
         }
     }
 
-
-
     public function checkAddressZone(Request $request)
     {
         try {
             // Validate the request
             $request->validate([
                 'address_id' => 'required|exists:addresses,id',
-                'branch_id' => 'required|exists:branches,id',
             ]);
 
-            // Fetch the address and branch
+            // Fetch the address
             $address = Address::findOrFail($request->address_id);
-            $branch = Branch::findOrFail($request->branch_id);
 
             // Get the user's coordinates from the address
             $userLat = floatval($address->latitude);
             $userLon = floatval($address->longitude);
 
-            // Fetch all active areas for the branch
-            $areas = Area::where('branch_id', $branch->id)
-                ->where('is_active', 1)
-                ->get();
+            // Fetch all active areas with their branches
+            $areas = Area::where('is_active', 1)->with('branch')->get();
 
             if ($areas->isEmpty()) {
                 return response()->json([
-                    'message' => 'You can place a takeaway order since you are outside the delivery zone.',
+                    'message' => 'No delivery zones are available.',
                     'is_in_zone' => false,
                 ], 200);
             }
@@ -218,6 +212,8 @@ class OrderController extends Controller
             $isInZone = false;
             $areaName = null;
             $deliveryFee = null;
+            $branchId = null;
+            $branchName = null;
 
             foreach ($areas as $area) {
                 // Decode the points JSON
@@ -253,20 +249,23 @@ class OrderController extends Controller
                     $isInZone = true;
                     $areaName = $area->name;
                     $deliveryFee = $area->delivery_fees;
+                    $branchId = $area->branch->id ?? null;
+                    $branchName = $area->branch->name ?? null;
                     break;
                 }
             }
 
             // Prepare the response
             $response = [
-                'message' => $isInZone ? 'Address is within an active zone.' : 'The address is outside all active zones for the specified branch.',
+                'message' => $isInZone ? 'Address is within an active zone.' : 'The address is outside all active zones.',
                 'is_in_zone' => $isInZone,
             ];
 
             if ($isInZone) {
                 $response['data'] = [
                     'area_name' => $areaName,
-                    'branch_name' => $branch->name,
+                    'branch_name' => $branchName,
+                    'branch_id' => $branchId,
                     'delivery_fee' => $deliveryFee,
                 ];
             }
